@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/time.h>//时间函数，精确到微秒
 #include <openssl/bn.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -29,6 +30,9 @@ BIGNUM **v_arr;
 // response
 BIGNUM *sigma_resp;
 BIGNUM *miu_arr[CPOR_S];
+
+struct timeval start,end;//用于记录执行时间的
+long timeuse;
 
 void usage(void)
 {
@@ -254,12 +258,16 @@ int main (int argc, char *argv[])
 
     // verify the response.
     printf("Verify response for file %s...", file_name);
+    gettimeofday(&start,NULL);
     int ret = verify_response(file_name);
     if (ret == 1)
         printf("Confirmed.\n");
     else if (ret == 0)
         printf("Cheating.\n");
     else printf("Error occurred when verifying.\n");
+    gettimeofday(&end,NULL);
+    timeuse = 1000000*(end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec);
+    printf("Done. Time of verifying is %fs\n",timeuse/1000000.0);
 
     return 0;
 }

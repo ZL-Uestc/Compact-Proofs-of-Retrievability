@@ -6,8 +6,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include <sys/stat.h>
+#include <sys/stat.h>//轻松获取文件属性
 #include <sys/mman.h>
+#include <sys/time.h>//时间函数，精确到微秒
 #include <openssl/bn.h>
 #include <openssl/rand.h>
 #include <openssl/evp.h>
@@ -19,9 +20,11 @@
 
 BIGNUM *p;
 int n;
-BIGNUM *alpha_arr[CPOR_S];
-unsigned char kprf[CPOR_PRF_KEY_BYTES];
-off_t file_size;
+BIGNUM *alpha_arr[CPOR_S];//CPOR_S表示的是一个块内扇区的个数
+unsigned char kprf[CPOR_PRF_KEY_BYTES];//伪随机函数key的大小，使用的是HAMC—SHA1
+off_t file_size;//size in bytes, for regular files
+struct timeval start,end;//用于记录执行时间的
+long timeuse;
 
 void usage(void)
 {
@@ -80,13 +83,13 @@ int generate_metadata_file(const char *file_name)
     int i;
 
     // Generate p.
-    ctx = BN_CTX_new();
+    ctx = BN_CTX_new();//申请一个新的上下文结构，存储中间过程
     assert(ctx);
     int retries = 64;
     int flag = 0;
     for (i = 0; i < retries; i++) {
-        if (BN_generate_prime(p, CPOR_PRIME_BITS, 1, NULL, NULL, NULL, NULL)
-            && BN_is_prime(p, BN_prime_checks, NULL, ctx, NULL)
+        if (BN_generate_prime(p, CPOR_PRIME_BITS, 1, NULL, NULL, NULL, NULL)//产生CPOR_PRIME_BITS bits位的素数
+            && BN_is_prime(p, BN_prime_checks, NULL, ctx, NULL)//判断是否为素数
             && (BN_num_bits(p) == CPOR_PRIME_BITS)) {
             flag = 1;
             break;
@@ -122,7 +125,7 @@ BIGNUM *process_one_block(int block_idx, const unsigned char *curr, int block_si
     BIGNUM *sigma_alpha_mij = NULL;
 
     DEBUG_PRINT("processing block #%d.\n", block_idx);
-
+    //BN_new()  生成一个新的BIGNUM结构
     sigma = BN_new();
     assert(sigma);
     f_prf = BN_new();
@@ -131,9 +134,9 @@ BIGNUM *process_one_block(int block_idx, const unsigned char *curr, int block_si
     assert(mij);
     sigma_alpha_mij = BN_new();
     assert(sigma_alpha_mij);
-    BN_CTX *ctx = BN_CTX_new();
+    BN_CTX *ctx = BN_CTX_new();//申请新的上下文结构
     assert(ctx);
-    BN_CTX_init(ctx);
+    BN_CTX_init(ctx);//将所有的项赋值为0
     HMAC_CTX mac_ctx;
     HMAC_CTX_init(&mac_ctx);
 
@@ -151,20 +154,20 @@ BIGNUM *process_one_block(int block_idx, const unsigned char *curr, int block_si
     ret = BN_zero(sigma_alpha_mij);
     assert(ret);
     for (j = 0; j < CPOR_S; j++) {
-        mij = BN_bin2bn(curr, CPOR_SECTOR_SIZE, mij);
+        mij = BN_bin2bn(curr, CPOR_SECTOR_SIZE, mij);//sector size为8bytes 将curr中的SECTOR位的正整数转化为大整数
         assert(mij);
-        ret = BN_mod_mul(mij, alpha_arr[j], mij, p, ctx);
+        ret = BN_mod_mul(mij, alpha_arr[j], mij, p, ctx);//mij = (alpha_arr[j] * mij) % p
         assert(ret);
-        ret = BN_mod_add(sigma_alpha_mij, sigma_alpha_mij, mij, p, ctx);
+        ret = BN_mod_add(sigma_alpha_mij, sigma_alpha_mij, mij, p, ctx);//sigma_alpha_mij = (sigma_alpha_mij + mij) % p
         assert(ret);
         curr += CPOR_SECTOR_SIZE;
     }
 
     // now f_prf holds the first term and sigma_alpha_mij holds the second term.
-    ret = BN_mod_add(sigma, f_prf, sigma_alpha_mij, p, ctx);
+    ret = BN_mod_add(sigma, f_prf, sigma_alpha_mij, p, ctx);//sigma = (f_prf + sigma_alpha_mij) % p
     assert(ret);
 
-    BN_CTX_free(ctx);
+    BN_CTX_free(ctx);//释放上下文结构
     BN_free(f_prf);
     BN_free(mij);
     BN_free(sigma_alpha_mij);
@@ -191,8 +194,8 @@ int generate_tag_file(const char *file_name)
         perror("open: ");
         return -1;
     }
-    addr = (unsigned char *)mmap(NULL, file_size, PROT_READ,
-            MAP_PRIVATE, fd, 0);
+    addr = (unsigned char *)mmap(NULL, file_size, PROT_READ,//内存保护机制，页内容可以被读取
+            MAP_PRIVATE, fd, 0);//fd有效的文件描述词，一般由open()函数返回
     if ((void *)addr == MAP_FAILED) {
         perror("mmap: ");
         return -1;
@@ -217,7 +220,7 @@ int generate_tag_file(const char *file_name)
             BN_free(sigma);
             goto error;
         }
-        BN_free(sigma);
+        BN_free(sigma);//释放一个BIGNUM结构
     }
 
     munmap(addr, file_size);
@@ -226,7 +229,7 @@ error:
     munmap(addr, file_size);
     return -1;
 }
-
+//确定大整数p,以及分配给每个文件块扇区前的随机数α
 void init(void)
 {
     int i;
@@ -247,7 +250,7 @@ int main(int argc, char *argv[])
         usage();
         return -1;
     }
-    char *file_name = argv[1];
+    char *file_name = argv[1];//获取文件名
     struct stat st;
 
     // init global variables.
@@ -261,26 +264,31 @@ int main(int argc, char *argv[])
     file_size = st.st_size;
     // How many blocks in the file?
     // n = (file_size + CPOR_BLOCK_SIZE - 1) / CPOR_BLOCK_SIZE;
-    n = file_size / CPOR_BLOCK_SIZE;
+    n = file_size / CPOR_BLOCK_SIZE;//文件大小 4096bytes
 
     DEBUG_PRINT("file_size: %ld KB, blocks: %d.\n", file_size / 1024, n);
 
     // generate the metadata file.
     printf("Generating metadata file %s%s...", file_name, CPOR_META_FILE_SUFFIX);
+    gettimeofday(&start,NULL);
     if (generate_metadata_file(file_name)) {
         fprintf(stderr, "Generate metadata file failed.\n");
         return -1;
     }
-    printf("Done.\n");
+    gettimeofday(&end,NULL);
+    timeuse = 1000000*(end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec);
+    printf("Done. Time of generating metadata file is %fs\n",timeuse/1000000.0);
 
     // generate tag for each block, and write to tag file.
     printf("Generating tag file %s%s...", file_name, CPOR_TAG_FILE_SUFFIX);
+    gettimeofday(&start,NULL);
     if (generate_tag_file(file_name)) {
         fprintf(stderr, "Generate tag file failed.\n");
         return -1;
     }
-    printf("Done.\n");
-
+    gettimeofday(&end,NULL);
+    timeuse = 1000000*(end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec);
+    printf("Done. Time of generating tag file is %fs\n",timeuse/1000000.0);
     return 0;
 }
 

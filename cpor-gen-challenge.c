@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <openssl/bn.h>
 #include <openssl/rand.h>
+#include <sys/time.h>//时间函数，精确到微秒
 #include "cpor.h"
 
 // OK, forgive my including .c file directly.
@@ -15,6 +16,9 @@
 
 int n;
 BIGNUM *p;
+
+struct timeval start,end;//用于记录执行时间的
+long timeuse;
 
 void usage(void)
 {
@@ -44,7 +48,7 @@ int generate_challenge_file(const char *file_name)
     int i, l;
 
     // load n & p from metadata file.
-    if (load_n_p_from_file(file_name, &n, &p))
+    if (load_n_p_from_file(file_name, &n, &p))//if 非零非空为true
         return -1;
 
     DEBUG_PRINT("total blocks: %d\n", n);
@@ -64,7 +68,7 @@ int generate_challenge_file(const char *file_name)
     for (i = 0; i < l; i++) {
         BIGNUM *ptr = BN_new();
         assert(ptr);
-        int ret = BN_rand_range(ptr, p);
+        int ret = BN_rand_range(ptr, p);//产生的随机数0<ptr<p
         assert(ret);
         v_arr[i] = ptr;
     }
@@ -133,11 +137,14 @@ int main(int argc, char *argv[])
     // generate the challenge file.
     printf("Generating challenge file %s%s for file %s...",
             file_name, CPOR_CHALLENGE_FILE_SUFFIX, file_name);
+    gettimeofday(&start,NULL);
     if (generate_challenge_file(file_name)) {
         fprintf(stderr, "Generate challenge file failed.\n");
         return -1;
     }
-    printf("Done.\n");
+    gettimeofday(&end,NULL);
+    timeuse = 1000000*(end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec);
+    printf("Done. Time of gen challenge is %fs\n",timeuse/1000000.0);
 
     return 0;
 }

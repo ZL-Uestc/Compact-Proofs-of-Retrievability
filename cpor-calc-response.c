@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/time.h>//时间函数，精确到微秒
 #include <openssl/bn.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -20,6 +21,9 @@ BIGNUM *p;
 int n, l;
 int *idx;
 BIGNUM **v_arr;
+
+struct timeval start,end;//用于记录执行时间的
+long timeuse;
 
 void usage(void)
 {
@@ -105,7 +109,7 @@ BIGNUM *load_this_sector(FILE *datafile, int i, int j)
         fprintf(stderr, "Failed to read sector from data file.\n");
         return NULL;
     }
-    return BN_bin2bn(buf, CPOR_SECTOR_SIZE, NULL);
+    return BN_bin2bn(buf, CPOR_SECTOR_SIZE, NULL);//将buf中SECTOR_SIZE位的正整数转化为大整数
 }
 
 BIGNUM *calc_sigma(const char *file_name)
@@ -133,14 +137,14 @@ BIGNUM *calc_sigma(const char *file_name)
     assert(ctx);
     BN_CTX_init(ctx);
 
-    ret = BN_zero(sigma);
+    ret = BN_zero(sigma);//设值为0；
     assert(ret);
     for (i = 0; i < l; i++) {
         sigma_i = load_this_tag(file, idx[i]);
         assert(sigma_i);
-        ret = BN_mod_mul(sigma_i, sigma_i, v_arr[i], p, ctx);
+        ret = BN_mod_mul(sigma_i, sigma_i, v_arr[i], p, ctx);//sigma_i = (sigma_i * v_arr[i]) % p
         assert(ret);
-        ret = BN_mod_add(sigma, sigma, sigma_i, p, ctx);
+        ret = BN_mod_add(sigma, sigma, sigma_i, p, ctx);//sigma = (sigma + sigma_i) % p
         assert(ret);
         BN_free(sigma_i);
     }
@@ -154,16 +158,16 @@ int generate_response_file(const char *file_name)
     FILE *datafile, *file;
     int i, j, ret;
 
-    datafile = fopen(file_name, "rb");
+    datafile = fopen(file_name, "rb");//二进制的形式读文本文件
     if (!datafile) {
         fprintf(stderr, "Failed to open data file.\n");
         return -1;
     }
     // create the response file.
-    respfile = (char *)malloc(strlen(file_name) + strlen(CPOR_RESPONSE_FILE_SUFFIX) + 1);
+    respfile = (char *)malloc(strlen(file_name) + strlen(CPOR_RESPONSE_FILE_SUFFIX) + 1);//分配一定长度的内存字节块，分配成功，则返回指向被分配内存的指针
     assert(respfile);
     memcpy(respfile, file_name, strlen(file_name));
-    strcpy(respfile + strlen(file_name), CPOR_RESPONSE_FILE_SUFFIX);
+    strcpy(respfile + strlen(file_name), CPOR_RESPONSE_FILE_SUFFIX);//strcpy只能拷贝字符串，遇到‘\0’就结束拷贝
     file = fopen(respfile, "wb");
     free(respfile);
     if (!file) {
@@ -243,12 +247,15 @@ int main (int argc, char *argv[])
 
     // generate the response file.
     printf("Generating response file %s%s for file %s...",
-            file_name, CPOR_RESPONSE_FILE_SUFFIX, file_name);
+            file_name, CPOR_RESPONSE_FILE_SUFFIX, file_name);//.response
+    gettimeofday(&start,NULL);
     if (generate_response_file(file_name)) {
         fprintf(stderr, "Generate response file failed.\n");
         return -1;
     }
-    printf("Done.\n");
+    gettimeofday(&end,NULL);
+    timeuse = 1000000*(end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec);
+    printf("Done. Time of calc response file is %fs\n",timeuse/1000000.0);
 
     return 0;
 }

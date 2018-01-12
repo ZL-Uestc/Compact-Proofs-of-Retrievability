@@ -1,7 +1,7 @@
 
 CC = gcc
-CLIBS = -lcrypto
-CFLAGS = -Wall -O3
+CLIBS = -L/usr/local/ssl/lib -lcrypto
+CFLAGS = -Wall -O3 -I/usr/local/ssl/include
 SOURCES= cpor-gen-keys.c cpor-tag-file.c cpor-gen-challenge.c cpor-calc-response.c cpor-verify-response.c
 TARGETS= cpor-gen-keys cpor-tag-file cpor-gen-challenge cpor-calc-response cpor-verify-response
 

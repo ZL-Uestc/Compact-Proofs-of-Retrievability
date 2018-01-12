@@ -44,7 +44,7 @@
 #define CPOR_RESPONSE_FILE_SUFFIX    ".response"
 
 /* Block size. */
-#define CPOR_BLOCK_SIZE     4096
+#define CPOR_BLOCK_SIZE     4096 //bytes
 /* XXX In this implementation, we made an assumption 
  * that the file size is multiple of CPOR_BLOCK_ZIE. */
 /* Sector size in bytes.
